@@ -1,0 +1,25 @@
+click==8.1.8
+# Keep crewai at version 0.130.0
+# Other package versions are flexible and can be changed
+# Only change crewai version if there are critical dependency conflicts that cannot be resolved by other means
+crewai==0.130.0
+crewai-tools==0.47.1
+fastapi==0.110.3
+uvicorn==0.29.0
+python-dotenv==1.0.0
+PyPDF2==3.0.1
+pydantic>=2.4.2
+chromadb==0.5.23
+langchain-core>=0.1.52
+tiktoken>=0.8.0
+
+#For my model used
+langchain_google_genai 
+
+#pdf Loader
+pypdf
+
+python-multipart
+google-generativeai
+groq
+langchain_groq
