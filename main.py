@@ -2,23 +2,49 @@ from fastapi import FastAPI, File, UploadFile, Form, HTTPException
 import os
 import uuid
 import asyncio
-
+import time
 from crewai import Crew, Process
 from agents import doctor
 from task import help_patients
 
 app = FastAPI(title="Blood Test Report Analyser")
 
-def run_crew(query: str, file_path: str="data/sample.pdf"):
-    """To run the whole crew"""
-    medical_crew = Crew(
-        agents=[doctor],
-        tasks=[help_patients],
-        process=Process.sequential,
-    )
-    
-    result = medical_crew.kickoff({'query': query})
-    return result
+
+def run_crew(query: str, file_path: str) -> str:
+    try:
+        # Add timeout and error handling
+        medical_crew = Crew(
+            agents=[doctor],
+            tasks=[help_patients],
+            process=Process.sequential,
+            verbose=True,  # Enable verbose for debugging
+            memory=False,
+            max_execution_time=120  # 2 minutes timeout
+        )
+        
+        result = medical_crew.kickoff(
+            inputs={
+                'query': query,
+                'path': file_path
+            }
+        )
+        
+        # Better result handling
+        if result and hasattr(result, 'raw'):
+            return str(result.raw)[:1000]
+        elif result:
+            return str(result)[:1000]
+        else:
+            return "Analysis completed but no specific recommendations generated."
+            
+    except Exception as e:
+        error_msg = str(e)
+        if "RateLimitError" in error_msg or "rate limit" in error_msg.lower():
+            return "Our medical analysis service is currently busy. Please try again in a few minutes."
+        elif "timeout" in error_msg.lower() or "Maximum iterations" in error_msg:
+            return "Analysis took longer than expected. Please try with a shorter query or smaller file."
+        else:
+            return f"Error processing request: {error_msg[:200]}"
 
 @app.get("/")
 async def root():
@@ -28,9 +54,13 @@ async def root():
 @app.post("/analyze")
 async def analyze_blood_report(
     file: UploadFile = File(...),
-    query: str = Form(default="Summarise my Blood Test Report")
+    query: str = Form(default="Provide a brief summary of this blood test report")
 ):
     """Analyze blood test report and provide comprehensive health recommendations"""
+    
+    # Validate file type
+    if not file.filename.lower().endswith('.pdf'):
+        raise HTTPException(status_code=400, detail="Only PDF files are supported")
     
     # Generate unique filename to avoid conflicts
     file_id = str(uuid.uuid4())
@@ -43,14 +73,19 @@ async def analyze_blood_report(
         # Save uploaded file
         with open(file_path, "wb") as f:
             content = await file.read()
+            if len(content) == 0:
+                raise HTTPException(status_code=400, detail="Empty file uploaded")
             f.write(content)
         
-        # Validate query
-        if query=="" or query is None:
-            query = "Summarise my Blood Test Report"
+        # Validate and clean query
+        if not query or query.strip() == "":
+            query = "Provide a brief summary of this blood test report"
+        
+        # Limit query length to prevent issues
+        query = query.strip()[:200]
             
-        # Process the blood report with all specialists
-        response = run_crew(query=query.strip(), file_path=file_path)
+        # Process the blood report
+        response = run_crew(query=query, file_path=file_path)
         
         return {
             "status": "success",
@@ -60,7 +95,7 @@ async def analyze_blood_report(
         }
         
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error processing blood report: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error processing blood report: {str(e)[:200]}")
     
     finally:
         # Clean up uploaded file
@@ -72,4 +107,4 @@ async def analyze_blood_report(
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)  # Removed reload=True to eliminate warning
+    uvicorn.run(app, host="0.0.0.0", port=8000)

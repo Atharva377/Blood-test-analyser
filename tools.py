@@ -1,7 +1,7 @@
 import os
 from dotenv import load_dotenv
 from typing import Any
-from crewai.tools import tool  # Fixed: import 'tool' decorator from crewai.tools
+from crewai.tools import tool
 load_dotenv()
 
 from crewai_tools import SerperDevTool
@@ -12,54 +12,32 @@ os.environ["SERPER_API_KEY"] = os.getenv("SERPER_API_KEY")
 ## Creating search tool
 search_tool = SerperDevTool()
 
-## Creating custom pdf reader tool
-@tool("Blood Test Report Reader")  # Fixed: use @tool decorator with name
-def blood_test_report_tool(path: str = 'data/sample.pdf') -> str:
-    """Tool to read data from a pdf file containing blood test reports
-
-    Args:
-        path (str, optional): Path of the pdf file. Defaults to 'data/sample.pdf'.
-
-    Returns:
-        str: Full Blood Test report file
-    """
-    full_report = ""
-    
-    # Using PdfReader instead of PDFLoader
-    reader = PdfReader(path)
-    
-    for page in reader.pages:
-        content = page.extract_text()
+## Improved PDF reader tool
+@tool("Blood Test Report Reader")
+def blood_test_report_tool(path: str) -> str:
+    """Read and extract text from blood test PDF reports"""
+    try:
+        if not path or not os.path.exists(path):
+            return "ERROR: File not found or invalid path"
         
-        # Clean and format the report data
-        while "\n\n" in content:
-            content = content.replace("\n\n", "\n")
-            
-        full_report += content + "\n"
+        reader = PdfReader(path)
+        if len(reader.pages) == 0:
+            return "ERROR: PDF file is empty or corrupted"
         
-    return full_report
-
-## Creating Nutrition Analysis Tool
-@tool("Nutrition Analysis Tool")  # Fixed: use @tool decorator with name
-def nutrition_analysis_tool(blood_report_data: str) -> str:
-    """Tool to analyze nutrition based on blood report data"""
-    # Process and analyze the blood report data
-    processed_data = blood_report_data
-    
-    # Clean up the data format
-    i = 0
-    while i < len(processed_data):
-        if processed_data[i:i+2] == "  ":  # Remove double spaces
-            processed_data = processed_data[:i] + processed_data[i+1:]
-        else:
-            i += 1
+        # Extract text with better handling
+        extracted_text = ""
+        for i, page in enumerate(reader.pages[:3]):  # Limit to first 3 pages
+            page_text = page.extract_text()
+            if page_text:
+                extracted_text += f"\n--- Page {i+1} ---\n{page_text}"
             
-    # TODO: Implement nutrition analysis logic here
-    return "Nutrition analysis functionality to be implemented"
-
-## Creating Exercise Planning Tool
-@tool("Exercise Planning Tool")  # Fixed: use @tool decorator with name
-def exercise_planning_tool(blood_report_data: str) -> str:
-    """Tool to create exercise plans based on blood report data"""
-    # TODO: Implement exercise planning logic here
-    return "Exercise planning functionality to be implemented"
+            if len(extracted_text) > 3000:  # Limit total text
+                break
+        
+        if not extracted_text.strip():
+            return "ERROR: No readable text found in PDF"
+            
+        return extracted_text[:3000]  # Return first 3000 characters
+        
+    except Exception as e:
+        return f"ERROR reading PDF: {str(e)[:100]}"
